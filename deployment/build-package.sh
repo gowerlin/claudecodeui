@@ -32,9 +32,9 @@ npm run build
 
 # 3. Install production dependencies
 print_message "Installing production dependencies..." "$YELLOW"
-cp package.json package-lock.json "$PACKAGE_DIR/"
+cp package.json yarn.lock "$PACKAGE_DIR/"
 cd "$PACKAGE_DIR"
-npm ci --production
+yarn install --production
 cd -
 
 # 4. Copy application files
