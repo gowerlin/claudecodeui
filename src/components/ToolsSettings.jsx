@@ -84,7 +84,7 @@ function ToolsSettings({ isOpen, onClose }) {
   const fetchMcpServers = async () => {
     try {
       const token = localStorage.getItem('auth-token');
-      
+
       // First try to get servers using Claude CLI
       const cliResponse = await fetch('/api/mcp/cli/list', {
         headers: {
@@ -92,10 +92,12 @@ function ToolsSettings({ isOpen, onClose }) {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (cliResponse.ok) {
-        const cliData = await cliResponse.json();
-        if (cliData.success && cliData.servers) {
+        const contentType = cliResponse.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const cliData = await cliResponse.json();
+          if (cliData.success && cliData.servers) {
           // Convert CLI format to our format
           const servers = cliData.servers.map(server => ({
             id: server.name,
@@ -115,9 +117,12 @@ function ToolsSettings({ isOpen, onClose }) {
           }));
           setMcpServers(servers);
           return;
+          }
+        } else {
+          console.error('Expected JSON response from CLI but got:', contentType);
         }
       }
-      
+
       // Fallback to direct config reading
       const response = await fetch('/api/mcp/servers?scope=user', {
         headers: {
@@ -125,27 +130,35 @@ function ToolsSettings({ isOpen, onClose }) {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.ok) {
-        const data = await response.json();
-        setMcpServers(data.servers || []);
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          setMcpServers(data.servers || []);
+        } else {
+          console.error('Expected JSON response but got:', contentType);
+          setMcpServers([]);
+        }
       } else {
-        console.error('Failed to fetch MCP servers');
+        console.error('Failed to fetch MCP servers:', response.status, response.statusText);
+        setMcpServers([]);
       }
     } catch (error) {
       console.error('Error fetching MCP servers:', error);
+      setMcpServers([]);
     }
   };
 
   const saveMcpServer = async (serverData) => {
     try {
       const token = localStorage.getItem('auth-token');
-      
+
       if (editingMcpServer) {
         // For editing, remove old server and add new one
         await deleteMcpServer(editingMcpServer.id, 'user');
       }
-      
+
       // Use Claude CLI to add the server
       const response = await fetch('/api/mcp/cli/add', {
         method: 'POST',
@@ -163,18 +176,32 @@ function ToolsSettings({ isOpen, onClose }) {
           env: serverData.config?.env || {}
         })
       });
-      
+
       if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          await fetchMcpServers(); // Refresh the list
-          return true;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          if (result.success) {
+            await fetchMcpServers(); // Refresh the list
+            return true;
+          } else {
+            throw new Error(result.error || 'Failed to save server via Claude CLI');
+          }
         } else {
-          throw new Error(result.error || 'Failed to save server via Claude CLI');
+          throw new Error('Expected JSON response but got: ' + contentType);
         }
       } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to save server');
+        let errorMessage = 'Failed to save server';
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            errorMessage = error.error || errorMessage;
+          }
+        } catch (e) {
+          // If we can't parse the error, use the default message
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error saving MCP server:', error);
@@ -185,7 +212,7 @@ function ToolsSettings({ isOpen, onClose }) {
   const deleteMcpServer = async (serverId, scope = 'user') => {
     try {
       const token = localStorage.getItem('auth-token');
-      
+
       // Use Claude CLI to remove the server
       const response = await fetch(`/api/mcp/cli/remove/${serverId}`, {
         method: 'DELETE',
@@ -194,18 +221,32 @@ function ToolsSettings({ isOpen, onClose }) {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          await fetchMcpServers(); // Refresh the list
-          return true;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const result = await response.json();
+          if (result.success) {
+            await fetchMcpServers(); // Refresh the list
+            return true;
+          } else {
+            throw new Error(result.error || 'Failed to delete server via Claude CLI');
+          }
         } else {
-          throw new Error(result.error || 'Failed to delete server via Claude CLI');
+          throw new Error('Expected JSON response but got: ' + contentType);
         }
       } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to delete server');
+        let errorMessage = 'Failed to delete server';
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            errorMessage = error.error || errorMessage;
+          }
+        } catch (e) {
+          // If we can't parse the error, use the default message
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error deleting MCP server:', error);
@@ -223,13 +264,27 @@ function ToolsSettings({ isOpen, onClose }) {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.ok) {
-        const data = await response.json();
-        return data.testResult;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          return data.testResult;
+        } else {
+          throw new Error('Expected JSON response but got: ' + contentType);
+        }
       } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to test server');
+        let errorMessage = 'Failed to test server';
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            errorMessage = error.error || errorMessage;
+          }
+        } catch (e) {
+          // If we can't parse the error, use the default message
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error testing MCP server:', error);
@@ -248,13 +303,27 @@ function ToolsSettings({ isOpen, onClose }) {
         },
         body: JSON.stringify(formData)
       });
-      
+
       if (response.ok) {
-        const data = await response.json();
-        return data.testResult;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          return data.testResult;
+        } else {
+          throw new Error('Expected JSON response but got: ' + contentType);
+        }
       } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to test configuration');
+        let errorMessage = 'Failed to test configuration';
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            errorMessage = error.error || errorMessage;
+          }
+        } catch (e) {
+          // If we can't parse the error, use the default message
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error testing MCP configuration:', error);
@@ -272,13 +341,27 @@ function ToolsSettings({ isOpen, onClose }) {
           'Content-Type': 'application/json'
         }
       });
-      
+
       if (response.ok) {
-        const data = await response.json();
-        return data.toolsResult;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          return data.toolsResult;
+        } else {
+          throw new Error('Expected JSON response but got: ' + contentType);
+        }
       } else {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to discover tools');
+        let errorMessage = 'Failed to discover tools';
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            errorMessage = error.error || errorMessage;
+          }
+        } catch (e) {
+          // If we can't parse the error, use the default message
+        }
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error('Error discovering MCP tools:', error);
@@ -294,10 +377,10 @@ function ToolsSettings({ isOpen, onClose }) {
 
   const loadSettings = async () => {
     try {
-      
+
       // Load from localStorage
       const savedSettings = localStorage.getItem('claude-tools-settings');
-      
+
       if (savedSettings) {
         const settings = JSON.parse(savedSettings);
         setAllowedTools(settings.allowedTools || []);
@@ -327,7 +410,7 @@ function ToolsSettings({ isOpen, onClose }) {
   const saveSettings = () => {
     setIsSaving(true);
     setSaveStatus(null);
-    
+
     try {
       const settings = {
         allowedTools,
@@ -336,13 +419,13 @@ function ToolsSettings({ isOpen, onClose }) {
         projectSortOrder,
         lastUpdated: new Date().toISOString()
       };
-      
-      
+
+
       // Save to localStorage
       localStorage.setItem('claude-tools-settings', JSON.stringify(settings));
-      
+
       setSaveStatus('success');
-      
+
       setTimeout(() => {
         onClose();
       }, 1000);
@@ -415,9 +498,9 @@ function ToolsSettings({ isOpen, onClose }) {
 
   const handleMcpSubmit = async (e) => {
     e.preventDefault();
-    
+
     setMcpLoading(true);
-    
+
     try {
       await saveMcpServer(mcpFormData);
       resetMcpForm();
@@ -582,7 +665,7 @@ function ToolsSettings({ isOpen, onClose }) {
           </div>
 
           <div className="p-4 md:p-6 space-y-6 md:space-y-8 pb-safe-area-inset-bottom">
-            
+
             {/* Appearance Tab */}
             {activeTab === 'appearance' && (
               <div className="space-y-6 md:space-y-8">
@@ -656,7 +739,7 @@ function ToolsSettings({ isOpen, onClose }) {
             {/* Tools Tab */}
             {activeTab === 'tools' && (
               <div className="space-y-6 md:space-y-8">
-            
+
             {/* Skip Permissions */}
             <div className="space-y-4">
               <div className="flex items-center gap-3">
@@ -696,7 +779,7 @@ function ToolsSettings({ isOpen, onClose }) {
               <p className="text-sm text-muted-foreground">
                 {t('tools.allowedToolsDescription')}
               </p>
-              
+
               <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   value={newAllowedTool}
@@ -777,7 +860,7 @@ function ToolsSettings({ isOpen, onClose }) {
               <p className="text-sm text-muted-foreground">
                 {t('tools.disallowedToolsDescription')}
               </p>
-              
+
               <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   value={newDisallowedTool}
@@ -853,7 +936,7 @@ function ToolsSettings({ isOpen, onClose }) {
                   {t('mcpServers.description')}
                 </p>
               </div>
-              
+
               <div className="flex justify-between items-center">
                 <Button
                   onClick={() => openMcpForm()}
@@ -881,7 +964,7 @@ function ToolsSettings({ isOpen, onClose }) {
                             {server.scope}
                           </Badge>
                         </div>
-                        
+
                         <div className="text-sm text-muted-foreground space-y-1">
                           {server.type === 'stdio' && server.config.command && (
                             <div>Command: <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded text-xs">{server.config.command}</code></div>
@@ -982,7 +1065,7 @@ function ToolsSettings({ isOpen, onClose }) {
                           </div>
                         )}
                       </div>
-                      
+
                       <div className="flex items-center gap-2 ml-4">
                         <Button
                           onClick={() => handleMcpTest(server.id, server.scope)}
@@ -1052,7 +1135,7 @@ function ToolsSettings({ isOpen, onClose }) {
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
-                  
+
                   <form onSubmit={handleMcpSubmit} className="p-4 space-y-4">
                     {/* Basic Info */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1071,7 +1154,7 @@ function ToolsSettings({ isOpen, onClose }) {
                           required
                         />
                       </div>
-                      
+
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-2">
                           {t('mcpServers.transportType')}
@@ -1108,7 +1191,7 @@ function ToolsSettings({ isOpen, onClose }) {
                             required
                           />
                         </div>
-                        
+
                         <div>
                           <label className="block text-sm font-medium text-foreground mb-2">
                             {t('mcpServers.arguments')}
@@ -1211,11 +1294,11 @@ function ToolsSettings({ isOpen, onClose }) {
                           )}
                         </Button>
                       </div>
-                      
+
                       <p className="text-sm text-muted-foreground mb-3">
                         {t('mcpServers.configurationTestDescription')}
                       </p>
-                      
+
                       {mcpConfigTestResult && (
                         <div className={`p-3 rounded-lg text-sm ${
                           mcpConfigTestResult.success 
