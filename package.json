@@ -10,7 +10,10 @@
     "client": "vite --host",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "npm run build && npm run server"
+    "start": "npm run build && npm run server",
+    "package": "bash deployment/build-package.sh",
+    "package:docker": "docker build -f deployment/Dockerfile.production -t claudecodeui:latest .",
+    "package:compose": "docker-compose -f deployment/docker-compose.production.yml up -d"
   },
   "keywords": [
     "claude",
@@ -31,7 +34,6 @@
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@radix-ui/react-dropdown-menu": "^2.0.6",
-    "@tailwindcss/typography": "^0.5.16",
     "@uiw/react-codemirror": "^4.23.13",
     "@xterm/addon-clipboard": "^0.1.0",
     "@xterm/addon-webgl": "^0.18.0",
@@ -64,11 +66,14 @@
     "xterm-addon-fit": "^0.8.0"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.16",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
+    "esbuild": "^0.25.8",
+    "npm-check": "^6.0.1",
     "postcss": "^8.4.32",
     "sharp": "^0.34.2",
     "tailwindcss": "^3.4.0",
