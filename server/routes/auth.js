@@ -1,6 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
-import { userDb } from '../database/db.js';
+import { userDb, db } from '../database/db.js';
 import { generateToken, authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -33,30 +33,40 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Username must be at least 3 characters, password at least 6 characters' });
     }
     
-    // Check if users already exist (only allow one user)
-    const hasUsers = userDb.hasUsers();
-    if (hasUsers) {
-      return res.status(403).json({ error: 'User already exists. This is a single-user system.' });
+    // Use a transaction to prevent race conditions
+    db.prepare('BEGIN').run();
+    try {
+      // Check if users already exist (only allow one user)
+      const hasUsers = userDb.hasUsers();
+      if (hasUsers) {
+        db.prepare('ROLLBACK').run();
+        return res.status(403).json({ error: 'User already exists. This is a single-user system.' });
+      }
+      
+      // Hash password
+      const saltRounds = 12;
+      const passwordHash = await bcrypt.hash(password, saltRounds);
+      
+      // Create user
+      const user = userDb.createUser(username, passwordHash);
+      
+      // Generate token
+      const token = generateToken(user);
+      
+      // Update last login
+      userDb.updateLastLogin(user.id);
+
+      db.prepare('COMMIT').run();
+      
+      res.json({
+        success: true,
+        user: { id: user.id, username: user.username },
+        token
+      });
+    } catch (error) {
+      db.prepare('ROLLBACK').run();
+      throw error;
     }
-    
-    // Hash password
-    const saltRounds = 12;
-    const passwordHash = await bcrypt.hash(password, saltRounds);
-    
-    // Create user
-    const user = userDb.createUser(username, passwordHash);
-    
-    // Generate token
-    const token = generateToken(user);
-    
-    // Update last login
-    userDb.updateLastLogin(user.id);
-    
-    res.json({
-      success: true,
-      user: { id: user.id, username: user.username },
-      token
-    });
     
   } catch (error) {
     console.error('Registration error:', error);
@@ -80,12 +90,18 @@ router.post('/login', async (req, res) => {
     
     // Get user from database
     const user = userDb.getUserByUsername(username);
+    console.log('🔐 Login attempt for username:', username);
+    console.log('🔐 User found:', !!user);
+    
     if (!user) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
     
     // Verify password
+    console.log('🔐 Comparing passwords...');
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    console.log('🔐 Password valid:', isValidPassword);
+    
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }

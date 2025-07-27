@@ -899,7 +899,12 @@ app.post('/api/projects/:projectName/upload-images', authenticateToken, async (r
 
 // Serve React app for all other routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
+  if (process.env.NODE_ENV === 'production') {
+    res.sendFile(path.join(__dirname, '../dist/index.html'));
+  } else {
+    // In development, redirect to Vite dev server
+    res.redirect(`http://localhost:${process.env.VITE_PORT || 3001}`);
+  }
 });
 
 // Helper function to convert permissions to rwx format
@@ -991,6 +996,36 @@ async function startServer() {
     // Initialize authentication database
     await initializeDatabase();
     console.log('✅ Database initialization skipped (testing)');
+    
+    // Auto reset password in development mode
+    const isDevelopment = process.env.NODE_ENV !== 'production' || PORT == '3002' || PORT == 3002;
+    console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}, PORT: ${PORT}, isDevelopment: ${isDevelopment}`);
+    
+    if (isDevelopment) {
+      try {
+        const bcrypt = await import('bcrypt');
+        const { userDb } = await import('./database/db.js');
+        
+        const username = 'admin';
+        const password = 'admin123';
+        const saltRounds = 10;
+        const passwordHash = await bcrypt.default.hash(password, saltRounds);
+        
+        const existingUser = userDb.getUserByUsername(username);
+        if (existingUser) {
+          const { db } = await import('./database/db.js');
+          db.prepare('UPDATE users SET password_hash = ? WHERE username = ?').run(passwordHash, username);
+          console.log('🔑 Development mode: Password reset for admin user');
+        } else {
+          userDb.createUser(username, passwordHash);
+          console.log('🔑 Development mode: Created admin user');
+        }
+        console.log('   Username: admin');
+        console.log('   Password: admin123');
+      } catch (err) {
+        console.error('❌ Failed to reset development password:', err);
+      }
+    }
     
     server.listen(PORT, '0.0.0.0', async () => {
       console.log(`Claude Code UI server running on http://0.0.0.0:${PORT}`);
